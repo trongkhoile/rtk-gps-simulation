@@ -1,0 +1,16 @@
+.env
+__pycache__/
+*.pyc
+
+# frontend
+web/node_modules/
+web/dist/
+web/.netlify/
+
+# misc
+osm_names.txt
+osm_loop.txt
+osm_cycle.txt
+run_fetch.txt
+cache/
+

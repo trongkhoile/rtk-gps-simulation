@@ -1,0 +1,13 @@
+geopandas
+shapely
+sqlalchemy
+psycopg2-binary
+geoalchemy2
+osmnx
+numpy
+pandas
+streamlit
+folium
+streamlit-folium
+plotly
+python-dotenv

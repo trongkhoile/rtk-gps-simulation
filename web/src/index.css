@@ -1,0 +1,18 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Source Sans Pro", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: #262730;
+  background: #ffffff;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.leaflet-container {
+  border-radius: 4px;
+}

@@ -11,3 +11,5 @@ folium
 streamlit-folium
 plotly
 python-dotenv
+fastapi
+uvicorn[standard]

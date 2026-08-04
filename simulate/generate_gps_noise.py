@@ -1,9 +1,9 @@
 """
-Mo phong sai so GPS thuong (raw) va hieu chinh kieu Network RTK / VRS (corrected)
-voi nhieu tram base rai quanh tuyen duong.
+Mo phong sai so GPS thuong (Single, do ma) va hieu chinh kieu Network RTK / VRS
+(do pha song mang) voi nhieu tram base rai quanh tuyen duong.
 
 Mo hinh sai so tai moi thoi diem t:
-    measured_rover(t) = truth(t) + common_bias(t) + local_noise_rover(t)   # GPS thuong, khong lien quan base nao
+    measured_rover(t) = truth(t) + common_bias(t) + local_noise_rover(t)   # GPS thuong (Single), khong qua base nao
 
     Voi moi tram base i:
         measured_base_i(t)  = base_i + common_bias(t) + local_noise_base_i(t)
@@ -18,6 +18,15 @@ Tai moi thoi diem, rover dung correction cua tram base GAN NHAT (kieu Network
 RTK/VRS thuc te) thay vi chi 1 base co dinh -> baseline_divergence luon nho vi
 luon co 1 base gan trong ban kinh, du rover di het vong quanh ho.
 
+Age of Differential (tuoi du lieu hieu chinh): mo phong do tre truyen correction
+tu Base den Rover (qua NTRIP/radio). Correction cang cu (age cang lon) thi cang
+mat hieu luc, theo dung nguong trong tai lieu tham khao (Bang 2.4):
+    age < 2s   -> Fixed on dinh, correction hieu luc ~100%
+    age 2-5s   -> chap nhan duoc, hieu luc giam dan
+    age > 10s  -> de mat Fixed, hieu luc ~0% (roi ve gan nhu GPS thuong)
+Trang thai nghiem (Single / Float / Fixed) duoc phan loai lai theo sai so con
+lai, dung nguong RMS trong Bang 2.5 cua tai lieu.
+
 Input:  data/truth_path.geojson, data/base_station.geojson (nhieu tram)
 Output: data/gps_raw.geojson, data/gps_corrected.geojson, in ra RMSE raw vs corrected
 """
@@ -30,6 +39,11 @@ from shapely.geometry import Point
 
 UTM_EPSG_DEFAULT = 32648  # UTM 48N, phu hop khu vuc Ha Noi
 
+# Nguong RMS phan loai trang thai nghiem, theo dung Bang 2.5 tai lieu tham khao
+# (Single 2.0-5.0m, Float 0.2-1.0m, Fixed 1-3cm)
+FIXED_RMS_MAX = 0.03   # m, tran tren cua Fixed (~3cm)
+FLOAT_RMS_MAX = 1.0    # m, tran tren cua Float (~1m)
+
 
 def random_walk(n: int, step_std: float, rng: np.random.Generator) -> np.ndarray:
     """Random walk 2D (dx, dy) tich luy theo n buoc, dai dien common_bias."""
@@ -37,9 +51,18 @@ def random_walk(n: int, step_std: float, rng: np.random.Generator) -> np.ndarray
     return np.cumsum(steps, axis=0)
 
 
+def classify_status(error_m: np.ndarray) -> np.ndarray:
+    """Phan loai Single/Float/Fixed theo sai so con lai, dung nguong Bang 2.5."""
+    status = np.where(
+        error_m <= FIXED_RMS_MAX, "Fixed",
+        np.where(error_m <= FLOAT_RMS_MAX, "Float", "Single"),
+    )
+    return status
+
+
 def simulate(truth_gdf: gpd.GeoDataFrame, base_gdf: gpd.GeoDataFrame, utm_epsg: int,
              sigma_bias_step: float, sigma_local: float, baseline_ppm: float,
-             seed: int) -> tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
+             seed: int, age_seconds: float = 1.0) -> tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
     rng = np.random.default_rng(seed)
     n = len(truth_gdf)
     n_bases = len(base_gdf)
@@ -60,24 +83,42 @@ def simulate(truth_gdf: gpd.GeoDataFrame, base_gdf: gpd.GeoDataFrame, utm_epsg: 
     measured_rover_xy = truth_xy + common_bias + local_noise_rover         # GPS thuong (raw), khong qua base
     err_raw = np.linalg.norm(measured_rover_xy - truth_xy, axis=1)
 
+    # Age of Differential: Base do va gui correction cach day age_seconds, nen Rover
+    # dang dung correction cua common_bias/local_noise_base TAI THOI DIEM CU (t - lag),
+    # trong khi common_bias thuc te (random walk) da tiep tuc troi dat ke tu do -> cang
+    # lag lau, correction cang "cu" va lech xa gia tri hien tai (dung Bang 2.4).
+    ts_vals = pd.to_datetime(truth_gdf["ts"].values)
+    dt_seconds = (ts_vals[1] - ts_vals[0]).total_seconds() if n > 1 else 1.0
+    lag_samples = int(round(age_seconds / dt_seconds)) if dt_seconds > 0 else 0
+    t_idx_all = np.arange(n)
+    lag_idx = np.clip(t_idx_all - lag_samples, 0, n - 1)
+    common_bias_stale = common_bias[lag_idx]                               # (n,2)
+    local_noise_base_stale = local_noise_base[:, lag_idx, :]               # (n_bases,n,2)
+
     dist_to_bases = np.linalg.norm(truth_xy[None, :, :] - base_xy[:, None, :], axis=2)  # (n_bases, n)
     nearest_base_idx = np.argmin(dist_to_bases, axis=0)                    # (n,)
 
     sigma_div = baseline_ppm * dist_to_bases / 1000.0                      # (n_bases, n)
     baseline_divergence = rng.normal(0, 1, size=(n_bases, n, 2)) * sigma_div[:, :, None]
 
-    correction = -common_bias[None, :, :] - local_noise_base               # (n_bases, n, 2)
-    corrected_via = measured_rover_xy[None, :, :] + correction + baseline_divergence  # (n_bases, n, 2)
+    correction = -common_bias_stale[None, :, :] - local_noise_base_stale   # (n_bases, n, 2), tinh tu du lieu cu
+    corrected_via = measured_rover_xy[None, :, :] + correction + baseline_divergence
 
     t_idx = np.arange(n)
     corrected_rover_xy = corrected_via[nearest_base_idx, t_idx, :]         # (n, 2)
     used_base = np.array(base_names)[nearest_base_idx]
 
     err_corrected = np.linalg.norm(corrected_rover_xy - truth_xy, axis=1)
+    status = classify_status(err_corrected)
+
     print(f"So tram base: {n_bases}")
-    print(f"RMSE GPS thuong (raw):        {np.sqrt(np.mean(err_raw**2)):.3f} m")
-    print(f"RMSE sau hieu chinh (RTK):    {np.sqrt(np.mean(err_corrected**2)):.3f} m")
+    print(f"Age of Differential: {age_seconds:.1f}s (~{lag_samples} mau du lieu tre, dt={dt_seconds:.1f}s/mau)")
+    print(f"RMSE GPS thuong (Single, do ma):    {np.sqrt(np.mean(err_raw**2)):.3f} m")
+    print(f"RMSE sau hieu chinh (do pha, RTK):   {np.sqrt(np.mean(err_corrected**2)):.3f} m")
     print(f"Cai thien: {(1 - np.sqrt(np.mean(err_corrected**2)) / np.sqrt(np.mean(err_raw**2))) * 100:.1f}%")
+    for s in ["Fixed", "Float", "Single"]:
+        pct = float(np.mean(status == s)) * 100
+        print(f"  {s}: {pct:.1f}% so diem")
 
     def xy_to_gdf(xy, seq, ts, extra=None):
         pts = gpd.GeoSeries([Point(x, y) for x, y in xy], crs=f"EPSG:{utm_epsg}").to_crs(epsg=4326)
@@ -103,7 +144,8 @@ def simulate(truth_gdf: gpd.GeoDataFrame, base_gdf: gpd.GeoDataFrame, utm_epsg: 
     gps_raw_gdf = gpd.GeoDataFrame(gps_raw_gdf, crs="EPSG:4326")
 
     gps_corrected_gdf = xy_to_gdf(
-        corrected_rover_xy, seq, ts, {"used_base": used_base, "error_m": err_corrected}
+        corrected_rover_xy, seq, ts,
+        {"used_base": used_base, "error_m": err_corrected, "status": status},
     )
     gps_corrected_gdf["error_raw_m"] = err_raw
 
@@ -122,7 +164,7 @@ def push_to_db(gps_raw_gdf: gpd.GeoDataFrame, gps_corrected_gdf: gpd.GeoDataFram
     gps_raw_gdf[["seq", "ts", "source", "station_name", "geometry"]].rename_geometry("geom").to_postgis(
         "gps_raw", engine, if_exists="append", index=False
     )
-    gps_corrected_gdf[["seq", "ts", "used_base", "geometry"]].rename_geometry("geom").to_postgis(
+    gps_corrected_gdf[["seq", "ts", "used_base", "status", "geometry"]].rename_geometry("geom").to_postgis(
         "gps_corrected", engine, if_exists="append", index=False
     )
     print("Da ghi gps_raw va gps_corrected vao PostGIS.")
@@ -139,6 +181,9 @@ def main():
                          help="He so suy giam tuong quan theo khoang cach base-rover (m/km). "
                               "1 ppm (chuan datasheet RTK that) = 0.001 m/km")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--age-seconds", type=float, default=1.0,
+                         help="Tuoi du lieu hieu chinh (giay) - Age of Differential. "
+                              "<2s Fixed on dinh, 2-5s chap nhan duoc, >10s de mat Fixed (Bang 2.4)")
     parser.add_argument("--push-db", action="store_true")
     args = parser.parse_args()
 
@@ -148,6 +193,7 @@ def main():
     gps_raw_gdf, gps_corrected_gdf = simulate(
         truth_gdf, base_gdf, args.utm_epsg,
         args.sigma_bias_step, args.sigma_local, args.baseline_ppm, args.seed,
+        age_seconds=args.age_seconds,
     )
 
     gps_raw_gdf.to_file("data/gps_raw.geojson", driver="GeoJSON")

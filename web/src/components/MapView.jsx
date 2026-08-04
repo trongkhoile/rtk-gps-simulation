@@ -9,6 +9,8 @@ const baseIcon = divIcon({
   iconAnchor: [12, 22],
 });
 
+const STATUS_COLOR = { Fixed: "#2e7d32", Float: "#e6a600", Single: "#c62828" };
+
 function ClickCatcher({ onMapClick }) {
   useMapEvents({
     click(e) {
@@ -77,14 +79,19 @@ export default function MapView({ truthPath, baseStations, simResult, stepIdx, o
         />
       ))}
 
-      {correctedPoints.map((p) => (
-        <CircleMarker
-          key={`corr-${p.seq}`}
-          center={[p.lat, p.lon]}
-          radius={2}
-          pathOptions={{ color: "blue", fillColor: "blue", fillOpacity: 0.7 }}
-        />
-      ))}
+      {correctedPoints.map((p) => {
+        const color = STATUS_COLOR[p.status] || "blue";
+        return (
+          <CircleMarker
+            key={`corr-${p.seq}`}
+            center={[p.lat, p.lon]}
+            radius={2}
+            pathOptions={{ color, fillColor: color, fillOpacity: 0.8 }}
+          >
+            <Tooltip>{p.status} — {p.error_m.toFixed(3)}m</Tooltip>
+          </CircleMarker>
+        );
+      })}
 
       {currentTruth && (
         <CircleMarker

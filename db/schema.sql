@@ -40,6 +40,7 @@ CREATE TABLE gps_corrected (
     seq int NOT NULL,
     ts timestamp NOT NULL,
     used_base text,  -- ten tram base duoc chon (gan rover nhat) tai thoi diem nay
+    status text CHECK (status IN ('Fixed', 'Float', 'Single')),  -- trang thai nghiem RTK (Bang 2.5 tai lieu)
     geom geometry(Point, 4326) NOT NULL
 );
 CREATE INDEX idx_gps_corrected_geom ON gps_corrected USING GIST (geom);

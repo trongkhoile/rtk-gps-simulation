@@ -51,6 +51,7 @@ class SimulateRequest(BaseModel):
     sigma_local: float = 0.02
     baseline_ppm: float = 0.001
     seed: int = 42
+    age_seconds: float = 1.0
 
 
 @app.get("/api/truth-path")
@@ -88,7 +89,7 @@ def post_simulate(req: SimulateRequest):
     gps_raw_gdf, gps_corrected_gdf = simulate(
         TRUTH_GDF, base_gdf, utm_epsg=32648,
         sigma_bias_step=req.sigma_bias_step, sigma_local=req.sigma_local,
-        baseline_ppm=req.baseline_ppm, seed=req.seed,
+        baseline_ppm=req.baseline_ppm, seed=req.seed, age_seconds=req.age_seconds,
     )
 
     rover_gdf = gps_raw_gdf[gps_raw_gdf["source"] == "rover"]
@@ -101,11 +102,18 @@ def post_simulate(req: SimulateRequest):
     rmse_raw = float(np.sqrt(np.mean(gps_corrected_gdf["error_raw_m"] ** 2)))
     rmse_corrected = float(np.sqrt(np.mean(gps_corrected_gdf["error_m"] ** 2)))
     improvement = (1 - rmse_corrected / rmse_raw) * 100 if rmse_raw > 0 else 0.0
+    status_counts = gps_corrected_gdf["status"].value_counts()
+    n_points = len(gps_corrected_gdf)
+    status_pct = {
+        s: float(status_counts.get(s, 0)) / n_points * 100 for s in ["Fixed", "Float", "Single"]
+    }
 
     return {
         "rmse_raw": rmse_raw,
         "rmse_corrected": rmse_corrected,
         "improvement": improvement,
+        "status_pct": status_pct,
+        "age_seconds": req.age_seconds,
         "base_stations": [
             {"name": row.name, "lat": row.geometry.y, "lon": row.geometry.x} for row in base_gdf.itertuples()
         ],
@@ -117,6 +125,7 @@ def post_simulate(req: SimulateRequest):
             {
                 "seq": int(r.seq), "lat": r.geometry.y, "lon": r.geometry.x,
                 "used_base": r.used_base, "error_raw_m": r.error_raw_m, "error_m": r.error_m,
+                "status": r.status,
             }
             for r in gps_corrected_gdf.itertuples()
         ],

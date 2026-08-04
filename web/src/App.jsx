@@ -17,6 +17,7 @@ export default function App() {
   const [sigmaBiasStep, setSigmaBiasStep] = useState(0.3);
   const [sigmaLocal, setSigmaLocal] = useState(0.02);
   const [baselinePpm, setBaselinePpm] = useState(0.001);
+  const [ageSeconds, setAgeSeconds] = useState(1.0);
   const [seed, setSeed] = useState(42);
   const [stepIdx, setStepIdx] = useState(0);
 
@@ -33,6 +34,7 @@ export default function App() {
         sigmaLocal: params.sigmaLocal,
         baselinePpm: params.baselinePpm,
         seed: params.seed,
+        ageSeconds: params.ageSeconds,
       });
       setSimResult(result);
       setStepIdx(result.gps_corrected.length - 1);
@@ -51,7 +53,7 @@ export default function App() {
         setOriginalBases(bs);
         setBaseStations(bs);
         setMoveTarget(bs[0]?.name ?? "");
-        await doSimulate(bs, { sigmaBiasStep: 0.3, sigmaLocal: 0.02, baselinePpm: 0.001, seed: 42 });
+        await doSimulate(bs, { sigmaBiasStep: 0.3, sigmaLocal: 0.02, baselinePpm: 0.001, seed: 42, ageSeconds: 1.0 });
       } catch (e) {
         setError(String(e));
       }
@@ -60,13 +62,13 @@ export default function App() {
   }, []);
 
   const handleRun = () => {
-    doSimulate(baseStations, { sigmaBiasStep, sigmaLocal, baselinePpm, seed });
+    doSimulate(baseStations, { sigmaBiasStep, sigmaLocal, baselinePpm, seed, ageSeconds });
   };
 
   const handleResetBases = () => {
     setBaseStations(originalBases);
     setPendingClick(null);
-    doSimulate(originalBases, { sigmaBiasStep, sigmaLocal, baselinePpm, seed });
+    doSimulate(originalBases, { sigmaBiasStep, sigmaLocal, baselinePpm, seed, ageSeconds });
   };
 
   const handleMapClick = (lat, lon) => {
@@ -80,7 +82,7 @@ export default function App() {
     );
     setBaseStations(updated);
     setPendingClick(null);
-    doSimulate(updated, { sigmaBiasStep, sigmaLocal, baselinePpm, seed });
+    doSimulate(updated, { sigmaBiasStep, sigmaLocal, baselinePpm, seed, ageSeconds });
   };
 
   return (
@@ -89,6 +91,7 @@ export default function App() {
         sigmaBiasStep={sigmaBiasStep} setSigmaBiasStep={setSigmaBiasStep}
         sigmaLocal={sigmaLocal} setSigmaLocal={setSigmaLocal}
         baselinePpm={baselinePpm} setBaselinePpm={setBaselinePpm}
+        ageSeconds={ageSeconds} setAgeSeconds={setAgeSeconds}
         seed={seed} setSeed={setSeed}
         onRun={handleRun} running={running}
         onResetBases={handleResetBases}
@@ -97,9 +100,10 @@ export default function App() {
       <div className="main">
         <h1>Mo phong RTK giam sai so dinh vi GPS</h1>
         <p className="caption">
-          Tram base co dinh tinh correction tu vi tri da biet, ap dung cho rover de loai bo sai so chung
-          (dien ly, doi luu, ve tinh). Neu co nhieu tram base, tai moi thoi diem rover tu dong dung correction
-          cua tram GAN NHAT (kieu Network RTK/VRS).
+          GPS thuong (Single) dinh vi bang <b>do ma</b> (Code Phase), sai so vai met. RTK dung <b>do pha song mang</b>
+          (Carrier Phase) ket hop ky thuat sai phan voi tram Base da biet toa do, loai bo sai so chung
+          (dien ly, doi luu, dong ho ve tinh) de dat do chinh xac centimet. Neu co nhieu tram Base, tai moi thoi
+          diem Rover tu dong dung correction cua tram GAN NHAT (mo hinh Network RTK/VRS).
         </p>
 
         {error && <div className="error-box">{error}</div>}
@@ -110,6 +114,8 @@ export default function App() {
               rmseRaw={simResult.rmse_raw}
               rmseCorrected={simResult.rmse_corrected}
               improvement={simResult.improvement}
+              statusPct={simResult.status_pct}
+              currentStatus={simResult.gps_corrected[stepIdx]?.status}
             />
 
             <div className="field" style={{ margin: "16px 0" }}>
@@ -123,7 +129,10 @@ export default function App() {
             </div>
 
             <div className="legend">
-              Xanh la = duong that &nbsp;|&nbsp; Do = GPS thuong &nbsp;|&nbsp; Xanh duong = RTK da hieu chinh
+              Duong xanh la = quy dao that &nbsp;|&nbsp; Cham do nho = GPS thuong (Single) &nbsp;|&nbsp;
+              Cham RTK: <span style={{ color: "#2e7d32", fontWeight: 600 }}>Fixed</span> /{" "}
+              <span style={{ color: "#e6a600", fontWeight: 600 }}>Float</span> /{" "}
+              <span style={{ color: "#c62828", fontWeight: 600 }}>Single</span>
               &nbsp;|&nbsp; Nha = tram base &nbsp;|&nbsp; Net dut = base dang duoc dung
             </div>
 
@@ -157,6 +166,11 @@ export default function App() {
                 <ErrorChart data={simResult.gps_corrected} stepIdx={stepIdx} />
               </div>
             </div>
+
+            <p className="footnote">
+              Nguong Age of Differential (Bang 2.4) va phan loai trang thai Single/Float/Fixed (Bang 2.5) tham khao
+              theo bao cao "Tong quan ve GPS va RTK", Truong Dien - Dien tu, Dai hoc Bach Khoa Ha Noi, 5/2025.
+            </p>
           </>
         )}
       </div>

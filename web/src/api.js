@@ -12,7 +12,7 @@ export async function fetchBaseStations() {
   return res.json();
 }
 
-export async function runSimulate({ baseStations, sigmaBiasStep, sigmaLocal, baselinePpm, seed }) {
+export async function runSimulate({ baseStations, sigmaBiasStep, sigmaLocal, baselinePpm, seed, ageSeconds }) {
   const res = await fetch(`${API_BASE}/api/simulate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -22,6 +22,7 @@ export async function runSimulate({ baseStations, sigmaBiasStep, sigmaLocal, bas
       sigma_local: sigmaLocal,
       baseline_ppm: baselinePpm,
       seed,
+      age_seconds: ageSeconds,
     }),
   });
   if (!res.ok) throw new Error("Mo phong that bai");

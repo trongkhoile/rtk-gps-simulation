@@ -12,8 +12,10 @@ export default function ErrorChart({ data, stepIdx }) {
           <Tooltip formatter={(v) => v.toFixed(3) + " m"} />
           <Legend verticalAlign="bottom" height={36} />
           <ReferenceLine x={stepIdx} stroke="gray" strokeDasharray="4 4" />
-          <Line type="monotone" dataKey="error_raw_m" name="Sai so raw" stroke="red" dot={false} isAnimationActive={false} />
-          <Line type="monotone" dataKey="error_m" name="Sai so da hieu chinh (RTK)" stroke="blue" dot={false} isAnimationActive={false} />
+          <ReferenceLine y={0.03} stroke="#2e7d32" strokeDasharray="2 4" label={{ value: "Fixed ≤3cm", position: "insideTopLeft", fontSize: 10, fill: "#2e7d32" }} />
+          <ReferenceLine y={1.0} stroke="#e6a600" strokeDasharray="2 4" label={{ value: "Float ≤1m", position: "insideTopLeft", fontSize: 10, fill: "#e6a600" }} />
+          <Line type="monotone" dataKey="error_raw_m" name="Sai so Single (GPS thuong)" stroke="red" dot={false} isAnimationActive={false} />
+          <Line type="monotone" dataKey="error_m" name="Sai so sau hieu chinh RTK" stroke="#1a56db" dot={false} isAnimationActive={false} />
         </LineChart>
       </ResponsiveContainer>
     </div>

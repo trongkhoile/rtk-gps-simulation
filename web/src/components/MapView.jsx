@@ -25,7 +25,8 @@ const SIM_LAYER_DEFS = [
 
 const BUILDINGS_STYLE = { color: "#c9c2b4", weight: 0.5, fillColor: "#e8e3d8", fillOpacity: 0.9 };
 const WATER_STYLE = { color: "#a8c8e0", weight: 1, fillColor: "#cfe3f0", fillOpacity: 0.95 };
-const ROADS_STYLE = { color: "#b0aeb8", weight: 1.5 };
+const ROAD_CASING_STYLE = { color: "#c6c0af", weight: 4, opacity: 1 };
+const ROAD_FILL_STYLE = { color: "#ffffff", weight: 2.2, opacity: 1 };
 
 function ClickCatcher({ onMapClick }) {
   useMapEvents({
@@ -101,7 +102,12 @@ export default function MapView({ truthPath, baseStations, simResult, stepIdx, o
 
         {layers.buildings && baseGeo.buildings && <GeoJSON data={baseGeo.buildings} style={() => BUILDINGS_STYLE} />}
         {layers.water && baseGeo.water && <GeoJSON data={baseGeo.water} style={() => WATER_STYLE} />}
-        {layers.roads && baseGeo.roads && <GeoJSON data={baseGeo.roads} style={() => ROADS_STYLE} />}
+        {layers.roads && baseGeo.roads && (
+          <>
+            <GeoJSON data={baseGeo.roads} style={() => ROAD_CASING_STYLE} />
+            <GeoJSON data={baseGeo.roads} style={() => ROAD_FILL_STYLE} />
+          </>
+        )}
 
         {layers.truth && truthLine.length > 0 && (
           <Polyline positions={truthLine} pathOptions={{ color: "green", weight: 3 }} />
